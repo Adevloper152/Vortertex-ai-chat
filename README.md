@@ -309,9 +309,6 @@ This project is licensed under the [MIT](https://www.apache.org/licenses/LICENSE
 
 ---
 
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=u14app/Vortex-ai-chat&type=Date)](https://star-history.com/#u14app/Vortex-ai-chat&Date)
 
 # Vortex AI Chat
 
