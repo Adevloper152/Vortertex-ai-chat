@@ -1,4 +1,5 @@
 'use client'
+console.log("hello world")
 import dynamic from 'next/dynamic'
 import { useRef, useState, useMemo, KeyboardEvent, useEffect, useCallback, useLayoutEffect } from 'react'
 import type { FunctionCall, InlineDataPart } from '@xiangfa/generative-ai'
@@ -984,7 +985,7 @@ export default function Home() {
           </div>
         </div>
         <div className="flex w-32 items-center gap-1 max-sm:gap-0">
-          <a href="https://github.com/Adevloper152/Vortex-ai-chat" target="_blank">
+          <a href="https://github.com/Adevloper152/Vortertex-ai-chat" target="_blank">
             <Button className="h-8 w-8" title={t('github')} variant="ghost" size="icon">
               <Github className="h-5 w-5" />
             </Button>
@@ -1156,7 +1157,7 @@ export default function Home() {
                     <TooltipContent
                       className={cn(
                         'mb-1 px-2 py-1 text-center',
-                        isUndefined(audioRecordRef.current?.isRecording) ? '' : 'font-mono text-blue-500',
+                        isUndefined(audioRecordRef.current?.isRecording) ? '' : 'font-mono text-green-500',
                       )}
                     >
                       {isUndefined(audioRecordRef.current?.isRecording) ? t('startRecording') : formatTime(recordTime)}
