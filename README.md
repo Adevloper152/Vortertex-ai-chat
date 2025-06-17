@@ -2,10 +2,7 @@ Deploy your private Gemini application for free with one click, supporting Gemin
 
 English · 简体中文
 
-[![Web][Web-image]][web-url]
-![MacOS][MacOS-image]
-![Windows][Windows-image]
-![Linux][Linux-image]
+
 
 <h3 class="h3">you can download this in the web app if you run it in the localhost:3000 If you use chrome </h3>
 
