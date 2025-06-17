@@ -10,10 +10,7 @@ English · 简体中文
 <h3 class="h3">you can download this in the web app if you run it in the localhost:3000 If you use chrome </h3>
 
  
-[Web-image]: https://img.shields.io/badge/Web-PWA-orange?logo=microsoftedge
-[Windows-image]: https://img.shields.io/badge/-Windows-blue?logo=windows
-[MacOS-image]: https://img.shields.io/badge/-MacOS-black?logo=apple
-[Linux-image]: https://img.shields.io/badge/-Linux-333?logo=ubuntu
+
 
 This section demonstrates the clean and intuitive user interface of Vorttertex AI Chat. The design prioritizes ease of use, ensuring that both new and experienced users can quickly navigate and interact with the application. The layout is responsive, adapting seamlessly to various screen sizes, from mobile devices to large desktop monitors, ensuring a consistent and pleasant user experience across all platforms. The visual aesthetics are modern and minimalist, reducing cognitive load and focusing the user's attention on the core interaction with the AI.
 
