@@ -84,6 +84,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+      "gh-pages": "^6.3.0",
     "@tauri-apps/cli": "^2.1.0",
     "@types/html-to-text": "^9.0.4",
     "@types/lodash-es": "^4.17.12",
