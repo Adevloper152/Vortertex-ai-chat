@@ -14,6 +14,7 @@ import {
   LogOut,
   Settings,
 } from 'lucide-react'
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import SiriWave from 'siriwave'
 import { Button } from '@/components/ui/button'
 import { useMultimodalLive } from '@/hooks/useMultimodalLive'
@@ -37,6 +38,8 @@ type MediaStreamButtonProps = {
   offIcon: ReactNode
   start: () => Promise<any>
   stop: () => any
+  tooltipForOnState?: string
+  tooltipForOffState?: string
 }
 
 const Setting = dynamic(() => import('./Setting'))
@@ -45,8 +48,16 @@ const SystemInstruction = dynamic(() => import('@/components/SystemInstruction')
 /**
  * button used for triggering webcam or screen-capture
  */
-function MediaStreamButton({ isStreaming, onIcon, offIcon, start, stop }: MediaStreamButtonProps) {
-  return isStreaming ? (
+function MediaStreamButton({
+  isStreaming,
+  onIcon,
+  offIcon,
+  start,
+  stop,
+  tooltipForOnState,
+  tooltipForOffState,
+}: MediaStreamButtonProps) {
+  const button = isStreaming ? (
     <Button
       className="h-12 w-12 rounded-full opacity-100 transition-all duration-200 ease-in [&_svg]:size-6"
       onClick={stop}
@@ -65,9 +76,33 @@ function MediaStreamButton({ isStreaming, onIcon, offIcon, start, stop }: MediaS
       {offIcon}
     </Button>
   )
+
+  if (isStreaming && tooltipForOnState) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent>
+          <p>{tooltipForOnState}</p>
+        </TooltipContent>
+      </Tooltip>
+    )
+  }
+
+  if (!isStreaming && tooltipForOffState) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent>
+          <p>{tooltipForOffState}</p>
+        </TooltipContent>
+      </Tooltip>
+    )
+  }
+
+  return button
 }
 
-function MultimodalLive({ onClose }: Props) {
+function MultimodalLive({ onClose: onCloseProp }: Props) {
   const {
     update: updateMultimodalLiveState,
     isVideoStreaming,
@@ -97,7 +132,6 @@ function MultimodalLive({ onClose }: Props) {
   const audioRecorder = useMemo(() => new AudioRecorder(), [])
   const videoStreams = useMemo(() => [webcam, screenCapture], [webcam, screenCapture])
 
-  //handler for swapping from one video-stream to the next
   const changeStreams = (next?: UseMediaStreamResult) => async () => {
     if (next) {
       const mediaStream = await next.start()
@@ -120,14 +154,13 @@ function MultimodalLive({ onClose }: Props) {
   const close = () => {
     disconnect()
     updateMultimodalLiveState({ isVideoStreaming: false })
-    // close streams
-    changeStreams()
+    changeStreams()() // Ensure changeStreams is called to stop video streams
   }
 
   const handleConnect = () => {
-    const { apiKey } = useMultimodalLiveStore.getState()
-    const { apiKey: globalApiKey } = useSettingStore.getState()
-    if (apiKey || globalApiKey) {
+    const { apiKey: currentApiKey } = useMultimodalLiveStore.getState()
+    const { apiKey: globalApiKeyFromStore } = useSettingStore.getState()
+    if (currentApiKey || globalApiKeyFromStore) {
       connect()
     } else {
       setOpenSetting(true)
@@ -158,56 +191,78 @@ function MultimodalLive({ onClose }: Props) {
       videoRef.current.srcObject = activeVideoStream
     }
 
-    let timeoutId = -1
+    let frameTimeoutId = -1
+    let animationFrameId: number | null = null;
 
     function sendVideoFrame() {
-      const renderCanvas = renderCanvasRef.current
+      const currentVideoRef = videoRef.current
+      const currentRenderCanvasRef = renderCanvasRef.current
 
-      if (!renderCanvas || !videoRef.current) {
+      if (!currentRenderCanvasRef || !currentVideoRef) {
         return
       }
 
-      const ctx = renderCanvas.getContext('2d')!
-      renderCanvas.width = videoRef.current.videoWidth * 0.25
-      renderCanvas.height = videoRef.current.videoHeight * 0.25
-      if (renderCanvas.width + renderCanvas.height > 0) {
-        // Draw the video screen to canvas
-        ctx.drawImage(videoRef.current, 0, 0, renderCanvas.width, renderCanvas.height)
-        const base64 = renderCanvas.toDataURL('image/jpeg', 1.0)
+      const ctx = currentRenderCanvasRef.getContext('2d')
+      if (!ctx) return;
+
+      if (currentVideoRef.videoWidth > 0 && currentVideoRef.videoHeight > 0) {
+        currentRenderCanvasRef.width = currentVideoRef.videoWidth * 0.25
+        currentRenderCanvasRef.height = currentVideoRef.videoHeight * 0.25
+      } else {
+        if (connected && activeVideoStream !== null) {
+            frameTimeoutId = window.setTimeout(sendVideoFrame, 2000)
+        }
+        return
+      }
+
+      if (currentRenderCanvasRef.width + currentRenderCanvasRef.height > 0) {
+        ctx.drawImage(currentVideoRef, 0, 0, currentRenderCanvasRef.width, currentRenderCanvasRef.height)
+        const base64 = currentRenderCanvasRef.toDataURL('image/jpeg', 1.0)
         const data = base64.slice(base64.indexOf(',') + 1, Infinity)
         client.sendRealtimeInput([{ mimeType: 'image/jpeg', data }])
       }
-      if (connected) {
-        timeoutId = window.setTimeout(sendVideoFrame, 1000 / 0.5)
+
+      if (connected && activeVideoStream !== null) {
+        frameTimeoutId = window.setTimeout(sendVideoFrame, 2000)
       }
     }
+
     if (connected && activeVideoStream !== null) {
-      requestAnimationFrame(sendVideoFrame)
+      animationFrameId = requestAnimationFrame(sendVideoFrame)
     }
+
     return () => {
-      clearTimeout(timeoutId)
+      clearTimeout(frameTimeoutId)
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId)
+      }
     }
-  }, [connected, activeVideoStream, client, videoRef])
+  }, [connected, activeVideoStream, client])
 
   useEffect(() => {
-    let siriWave: SiriWave
-    const { systemInstruction } = useMessageStore.getState()
+    let siriWave: SiriWave | null = null
+    const siriWaveContainer = siriWaveRef.current
+    let subtitleTimeoutId = -1
 
     const initSiriWave = () => {
-      siriWave = new SiriWave({
-        container: siriWaveRef.current!,
-        style: 'ios9',
-        speed: 0.04,
-        amplitude: 0.1,
-        width: window.innerWidth,
-        height: window.innerHeight / 5,
-      })
+      if (siriWaveContainer) {
+        siriWave = new SiriWave({
+          container: siriWaveContainer,
+          style: 'ios9',
+          speed: 0.04,
+          amplitude: 0.1,
+          width: window.innerWidth,
+          height: window.innerHeight / 5,
+        })
+      }
     }
     const resetSiriWave = () => {
       siriWave?.dispose()
       initSiriWave()
     }
     initSiriWave()
+
+    const currentSystemInstructionText = systemInstruction || getMultimodalLivePrompt(voiceName);
 
     setConfig({
       model: `models/${model}`,
@@ -219,7 +274,7 @@ function MultimodalLive({ onClose }: Props) {
         },
       },
       systemInstruction: {
-        parts: [{ text: systemInstruction }],
+        parts: [{ text: currentSystemInstructionText }],
       },
     })
 
@@ -236,14 +291,15 @@ function MultimodalLive({ onClose }: Props) {
       }
     }
 
-    let timeoutId = -1
     const onContent = (data: ServerContent) => {
-      if ('modelTurn' in data) {
-        const texts = []
+      if ('modelTurn' in data && data.modelTurn && Array.isArray(data.modelTurn.parts)) {
+        const texts: string[] = []
         for (const part of data.modelTurn.parts) {
-          if (part.text) texts.push(part.text)
+          if (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') {
+            texts.push(part.text)
+          }
         }
-        clearTimeout(timeoutId)
+        clearTimeout(subtitleTimeoutId)
         setSubtitle(texts.join('\n\n'))
       }
     }
@@ -253,12 +309,12 @@ function MultimodalLive({ onClose }: Props) {
         siriWave.setSpeed(0.04)
         siriWave.setAmplitude(0.1)
       }
-      timeoutId = window.setTimeout(() => {
+      subtitleTimeoutId = window.setTimeout(() => {
         setSubtitle('')
       }, 1500)
     }
 
-    const onClose = () => {
+    const handleClientEventCloseCallback = () => {
       onTurncomplete()
     }
 
@@ -267,30 +323,27 @@ function MultimodalLive({ onClose }: Props) {
     client.addListener('audio', onAudio)
     client.addListener('content', onContent)
     client.addListener('turncomplete', onTurncomplete)
-    client.addListener('close', onClose)
+    client.addListener('close', handleClientEventCloseCallback)
+
     return () => {
       siriWave?.dispose()
-      client.removeListener('close', onClose)
+      client.removeListener('close', handleClientEventCloseCallback)
       client.removeListener('turncomplete', onTurncomplete)
       client.removeListener('content', onContent)
       client.removeListener('audio', onAudio)
       client.removeListener('setupcomplete', onSetupComplete)
       window.removeEventListener('resize', resetSiriWave)
+      clearTimeout(subtitleTimeoutId)
     }
-  }, [client, setConfig, voiceName, model, responseModalities])
+  }, [client, setConfig, voiceName, model, responseModalities, systemInstruction, instruction])
 
   useEffect(() => {
     const defaultRoleSetting = getMultimodalLivePrompt(voiceName)
-
     if (!systemInstruction) {
       instruction(defaultRoleSetting)
     }
-    return () => {
-      if (systemInstruction === defaultRoleSetting) {
-        instruction('')
-      }
-    }
   }, [systemInstruction, instruction, voiceName])
+
 
   useLayoutEffect(() => {
     setSupportsVideo('getUserMedia' in navigator.mediaDevices)
@@ -298,127 +351,140 @@ function MultimodalLive({ onClose }: Props) {
   }, [])
 
   return (
-    <div className="fixed left-0 right-0 top-0 z-50 flex h-full w-screen flex-col bg-slate-900">
-      <div className="items-top relative h-full w-full justify-center">
-        <div className={cn('mx-auto h-full w-full max-w-screen-sm', { hidden: connected })}>
-          <SystemInstruction className="relative top-1/2 mx-4 -translate-y-1/2" maxHeight="300px" closeable={false} />
-        </div>
-
-        <video
-          className={cn('absolute h-full w-full flex-grow object-cover transition-all duration-300', {
-            hidden: !videoRef.current || !isVideoStreaming,
-          })}
-          ref={videoRef}
-          autoPlay
-          playsInline
-        />
-        <canvas className="hidden" ref={renderCanvasRef} />
-
-        <div
-          className={cn('fixed left-1/2 top-[30%] flex -translate-x-1/2 flex-col items-center', {
-            hidden: isVideoStreaming,
-          })}
-        >
-          <div className={cn('mt-16 h-8 items-center justify-center', { hidden: !connected })}>
-            <div className={cn('h-1/5 w-full', { hidden: responseModalities === 'Text' })} ref={siriWaveRef}></div>
-            <div className="whitespace-pre-wrap text-center text-blue-300">{subtitle}</div>
+    <TooltipProvider>
+      <div className="fixed left-0 right-0 top-0 z-50 flex h-full w-screen flex-col bg-slate-900">
+        <div className="items-top relative h-full w-full justify-center">
+          <div className={cn('mx-auto h-full w-full max-w-screen-sm', { hidden: connected })}>
+            <SystemInstruction className="relative top-1/2 mx-4 -translate-y-1/2" maxHeight="300px" closeable={false} />
           </div>
-        </div>
 
-        <section
-          className="absolute left-1/2 z-20 flex -translate-x-1/2 flex-col items-center"
-          style={{ bottom: 'var(--safe-area-inset-bottom)' }}
-        >
-          <div className={cn('absolute bottom-12 flex items-center justify-center gap-6', { hidden: connected })}>
-            <Button
-              className="h-10 w-10 rounded-full text-slate-700 dark:text-slate-500 [&_svg]:size-5"
-              variant="secondary"
-              size="icon"
-              onClick={() => setOpenSetting(true)}
-            >
-              <Settings />
-            </Button>
-            <Button
-              className="h-14 w-14 rounded-full bg-green-500 text-white hover:bg-green-600 active:bg-green-700 [&_svg]:size-7"
-              size="icon"
-              onClick={() => handleConnect()}
-            >
-              <AudioLines />
-            </Button>
-            <Button
-              className="h-10 w-10 rounded-full text-slate-700 dark:text-slate-500 [&_svg]:size-5"
-              variant="secondary"
-              size="icon"
-              onClick={() => onClose()}
-            >
-              <LogOut />
-            </Button>
-          </div>
+          <video
+            className={cn('absolute h-full w-full flex-grow object-cover transition-all duration-300', {
+              hidden: !videoRef.current || !isVideoStreaming,
+            })}
+            ref={videoRef}
+            autoPlay
+            playsInline
+          />
+          <canvas className="hidden" ref={renderCanvasRef} />
 
           <div
-            className={cn('flex w-full max-w-[360px] flex-col items-center justify-between gap-2 p-4 pb-12 pt-4', {
-              invisible: !connected,
+            className={cn('fixed left-1/2 top-[30%] flex -translate-x-1/2 flex-col items-center', {
+              hidden: isVideoStreaming,
             })}
           >
-            <nav className="mx-auto inline-flex gap-3">
-              <Button
-                className={cn(
-                  muted ? 'opacity-30' : 'opacity-100',
-                  'h-12 w-12 rounded-full transition-all duration-200 ease-in [&_svg]:size-6',
-                )}
-                variant="outline"
-                onClick={() => setMuted(!muted)}
-                size="icon"
-              >
-                {!muted ? <Mic /> : <MicOff />}
-              </Button>
-
-              {supportsVideo && (
-                <>
-                  <MediaStreamButton
-                    isStreaming={webcam.isStreaming}
-                    start={changeStreams(webcam)}
-                    stop={changeStreams()}
-                    onIcon={<VideoOff />}
-                    offIcon={<Video />}
-                  />
-                  {supportsScreenCapture ? (
-                    <MediaStreamButton
-                      isStreaming={screenCapture.isStreaming}
-                      start={changeStreams(screenCapture)}
-                      stop={changeStreams()}
-                      onIcon={<ScreenShareOff />}
-                      offIcon={<ScreenShare />}
-                    />
-                  ) : (
-                    <Button
-                      className={cn(
-                        webcam.isStreaming ? 'opacity-100' : 'opacity-30',
-                        'h-12 w-12 rounded-full transition-all duration-200 ease-in [&_svg]:size-6',
-                      )}
-                      variant="outline"
-                      size="icon"
-                      onClick={() => switchWebcam()}
-                    >
-                      <SwitchCamera />
-                    </Button>
-                  )}
-                </>
-              )}
-
-              <Button
-                className="h-12 w-12 rounded-full bg-blue-500 hover:bg-blue-600 active:bg-blue-700 [&_svg]:size-6"
-                size="icon"
-                onClick={() => close()}
-              >
-                <X />
-              </Button>
-            </nav>
+            <div className={cn('mt-16 h-8 items-center justify-center', { hidden: !connected })}>
+              <div className={cn('h-1/5 w-full', { hidden: responseModalities === 'Text' })} ref={siriWaveRef}></div>
+              <div className="whitespace-pre-wrap text-center text-blue-300">{subtitle}</div>
+            </div>
           </div>
-        </section>
+
+          <section
+            className="absolute left-1/2 z-20 flex -translate-x-1/2 flex-col items-center"
+            style={{ bottom: 'var(--safe-area-inset-bottom)' }}
+          >
+            <div className={cn('absolute bottom-12 flex items-center justify-center gap-6', { hidden: connected })}>
+              <Button
+                className="h-10 w-10 rounded-full text-slate-700 dark:text-slate-500 [&_svg]:size-5"
+                variant="secondary"
+                size="icon"
+                onClick={() => setOpenSetting(true)}
+              >
+                <Settings />
+              </Button>
+              <Button
+                className="h-14 w-14 rounded-full bg-green-500 text-white hover:bg-green-600 active:bg-green-700 [&_svg]:size-7"
+                size="icon"
+                onClick={() => handleConnect()}
+              >
+                <AudioLines />
+              </Button>
+              <Button
+                className="h-10 w-10 rounded-full text-slate-700 dark:text-slate-500 [&_svg]:size-5"
+                variant="secondary"
+                size="icon"
+                onClick={() => onCloseProp()}
+              >
+                <LogOut />
+              </Button>
+            </div>
+
+            <div
+              className={cn('flex w-full max-w-[360px] flex-col items-center justify-between gap-2 p-4 pb-12 pt-4', {
+                invisible: !connected,
+              })}
+            >
+              <nav className="mx-auto inline-flex gap-3">
+                <Button
+                  className={cn(
+                    muted ? 'opacity-30' : 'opacity-100',
+                    'h-12 w-12 rounded-full transition-all duration-200 ease-in [&_svg]:size-6',
+                  )}
+                  variant="outline"
+                  onClick={() => setMuted(!muted)}
+                  size="icon"
+                >
+                  {!muted ? <Mic /> : <MicOff />}
+                </Button>
+
+                {supportsVideo && (
+                  <>
+                    <MediaStreamButton
+                      isStreaming={webcam.isStreaming}
+                      start={changeStreams(webcam)}
+                      stop={changeStreams()}
+                      onIcon={<VideoOff />}
+                      offIcon={<Video />}
+                      tooltipForOnState="Disable camera for Gemini"
+                      tooltipForOffState="Enable camera for Gemini"
+                    />
+                    {supportsScreenCapture ? (
+                      <MediaStreamButton
+                        isStreaming={screenCapture.isStreaming}
+                        start={changeStreams(screenCapture)}
+                        stop={changeStreams()}
+                        onIcon={<ScreenShareOff />}
+                        offIcon={<ScreenShare />}
+                        tooltipForOnState="Stop screen sharing"
+                        tooltipForOffState="Start screen sharing"
+                      />
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            className={cn(
+                              webcam.isStreaming ? 'opacity-100' : 'opacity-30',
+                              'h-12 w-12 rounded-full transition-all duration-200 ease-in [&_svg]:size-6',
+                            )}
+                            variant="outline"
+                            size="icon"
+                            onClick={() => switchWebcam()}
+                          >
+                            <SwitchCamera />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Switch camera</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </>
+                )}
+
+                <Button
+                  className="h-12 w-12 rounded-full bg-blue-500 hover:bg-blue-600 active:bg-blue-700 [&_svg]:size-6"
+                  size="icon"
+                  onClick={() => close()}
+                >
+                  <X />
+                </Button>
+              </nav>
+            </div>
+          </section>
+        </div>
+        <Setting open={openSetting} onClose={() => setOpenSetting(false)} />
       </div>
-      <Setting open={openSetting} onClose={() => setOpenSetting(false)} />
-    </div>
+    </TooltipProvider>
   )
 }
 
