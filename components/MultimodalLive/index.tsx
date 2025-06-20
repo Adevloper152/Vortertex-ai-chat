@@ -14,6 +14,7 @@ import {
   LogOut,
   Settings,
 } from 'lucide-react'
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import SiriWave from 'siriwave'
 import { Button } from '@/components/ui/button'
 import { useMultimodalLive } from '@/hooks/useMultimodalLive'
@@ -37,6 +38,8 @@ type MediaStreamButtonProps = {
   offIcon: ReactNode
   start: () => Promise<any>
   stop: () => any
+  tooltipForOnState?: string
+  tooltipForOffState?: string
 }
 
 const Setting = dynamic(() => import('./Setting'))
@@ -45,8 +48,16 @@ const SystemInstruction = dynamic(() => import('@/components/SystemInstruction')
 /**
  * button used for triggering webcam or screen-capture
  */
-function MediaStreamButton({ isStreaming, onIcon, offIcon, start, stop }: MediaStreamButtonProps) {
-  return isStreaming ? (
+function MediaStreamButton({
+  isStreaming,
+  onIcon,
+  offIcon,
+  start,
+  stop,
+  tooltipForOnState,
+  tooltipForOffState,
+}: MediaStreamButtonProps) {
+  const button = isStreaming ? (
     <Button
       className="h-12 w-12 rounded-full opacity-100 transition-all duration-200 ease-in [&_svg]:size-6"
       onClick={stop}
@@ -65,6 +76,30 @@ function MediaStreamButton({ isStreaming, onIcon, offIcon, start, stop }: MediaS
       {offIcon}
     </Button>
   )
+
+  if (isStreaming && tooltipForOnState) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent>
+          <p>{tooltipForOnState}</p>
+        </TooltipContent>
+      </Tooltip>
+    )
+  }
+
+  if (!isStreaming && tooltipForOffState) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent>
+          <p>{tooltipForOffState}</p>
+        </TooltipContent>
+      </Tooltip>
+    )
+  }
+
+  return button
 }
 
 function MultimodalLive({ onClose }: Props) {
@@ -298,10 +333,11 @@ function MultimodalLive({ onClose }: Props) {
   }, [])
 
   return (
-    <div className="fixed left-0 right-0 top-0 z-50 flex h-full w-screen flex-col bg-slate-900">
-      <div className="items-top relative h-full w-full justify-center">
-        <div className={cn('mx-auto h-full w-full max-w-screen-sm', { hidden: connected })}>
-          <SystemInstruction className="relative top-1/2 mx-4 -translate-y-1/2" maxHeight="300px" closeable={false} />
+    <TooltipProvider>
+      <div className="fixed left-0 right-0 top-0 z-50 flex h-full w-screen flex-col bg-slate-900">
+        <div className="items-top relative h-full w-full justify-center">
+          <div className={cn('mx-auto h-full w-full max-w-screen-sm', { hidden: connected })}>
+            <SystemInstruction className="relative top-1/2 mx-4 -translate-y-1/2" maxHeight="300px" closeable={false} />
         </div>
 
         <video
@@ -381,6 +417,8 @@ function MultimodalLive({ onClose }: Props) {
                     stop={changeStreams()}
                     onIcon={<VideoOff />}
                     offIcon={<Video />}
+                    tooltipForOnState="Disable camera for Gemini"
+                    tooltipForOffState="Enable camera for Gemini"
                   />
                   {supportsScreenCapture ? (
                     <MediaStreamButton
@@ -389,19 +427,28 @@ function MultimodalLive({ onClose }: Props) {
                       stop={changeStreams()}
                       onIcon={<ScreenShareOff />}
                       offIcon={<ScreenShare />}
+                      tooltipForOnState="Stop screen sharing"
+                      tooltipForOffState="Start screen sharing"
                     />
                   ) : (
-                    <Button
-                      className={cn(
-                        webcam.isStreaming ? 'opacity-100' : 'opacity-30',
-                        'h-12 w-12 rounded-full transition-all duration-200 ease-in [&_svg]:size-6',
-                      )}
-                      variant="outline"
-                      size="icon"
-                      onClick={() => switchWebcam()}
-                    >
-                      <SwitchCamera />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          className={cn(
+                            webcam.isStreaming ? 'opacity-100' : 'opacity-30',
+                            'h-12 w-12 rounded-full transition-all duration-200 ease-in [&_svg]:size-6',
+                          )}
+                          variant="outline"
+                          size="icon"
+                          onClick={() => switchWebcam()}
+                        >
+                          <SwitchCamera />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Switch camera</p>
+                      </TooltipContent>
+                    </Tooltip>
                   )}
                 </>
               )}
@@ -419,6 +466,7 @@ function MultimodalLive({ onClose }: Props) {
       </div>
       <Setting open={openSetting} onClose={() => setOpenSetting(false)} />
     </div>
+    </TooltipProvider>
   )
 }
 
